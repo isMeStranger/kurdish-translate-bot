@@ -5,10 +5,11 @@ A Telegram bot that translates text into Kurdish dialects (Sorani, Kurmanji, Bad
 ## Status
 
 Right now the bot:
-- translates text to **Sorani** (default) via `/translate` or just sending a message
+- translates text into all 3 dialects (Sorani/Kurmanji/Badini), auto-detecting the source language
+- per-user dialect setting via `/set` (stored in memory)
 - runs via long polling (fine for local dev)
 
-More dialects, settings, and a proper deploy setup are coming as I go.
+Coming up: daily limits, a proper deploy setup, and paid premium.
 
 ## Run it
 
@@ -26,6 +27,7 @@ Get a bot token from [@BotFather](https://t.me/BotFather), an API key from [Goog
 ├── src/
 │   ├── bot.js           # telegram bot, commands + message handling
 │   ├── translator.js    # Gemini calls (idiom detection in the prompt)
+│   ├── settings.js      # per-user settings (in-memory)
 │   └── dialects.js      # source languages + target dialect definitions
 └── .env.example
 ```

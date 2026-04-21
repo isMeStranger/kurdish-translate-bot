@@ -1,8 +1,9 @@
-// Simple first version of the bot. Only polling, only Sorani for now.
+// The main bot. Long polling for now, will switch to webhooks before deploy.
 import "dotenv/config";
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot } from "grammy";
 import { Translator } from "./translator.js";
 import { DIALECTS, DEFAULT_DIALECT } from "./dialects.js";
+import { getSettings, setDialect } from "./settings.js";
 
 const token = process.env.BOT_TOKEN;
 if (!token) {
@@ -18,25 +19,29 @@ if (!apiKey) {
 
 const bot = new Bot(token);
 const translator = new Translator(apiKey);
-const dialect = DIALECTS[DEFAULT_DIALECT];
 
-// reel quick reply helper so the flow messages look a bit nicer
 async function replyAsHtml(ctx, html) {
   await ctx.reply(html, { parse_mode: "HTML" });
 }
 
+// Dialect names for formatting reply headers
+function dialectLabel(id) {
+  const d = DIALECTS[id];
+  return d ? d.name + " (" + d.native + ")" : "Kurdish";
+}
+
 bot.command("start", async (ctx) => {
+  const settings = getSettings(ctx.from.id);
   await replyAsHtml(
     ctx,
     "<b>Kurdish Translator</b> 🏳️\n\n" +
-      "Send me any sentence and I will translate it into <b>" +
-      dialect.name +
-      "</b> (" +
-      dialect.native +
-      ").\n\n" +
-      "• <code>/translate &lt;text&gt;</code> — translate something\n" +
-      "• just type a message and I will handle it\n" +
-      "• more dialects coming soon"
+      "Send me any sentence and I will translate it into Kurdish for you.\n\n" +
+      "• <code>/translate &lt;text&gt;</code> — translate a sentence\n" +
+      "• <code>/set &lt;dialect&gt;</code> — choose Sorani / Kurmanji / Badini\n" +
+      "• just send a message, I'll auto-detect the language\n\n" +
+      "Currently translating into <b>" +
+      dialectLabel(settings.dialect) +
+      "</b>"
   );
 });
 
@@ -46,9 +51,41 @@ bot.command(["help", "h"], async (ctx) => {
     "<b>Commands</b>\n" +
       "<code>/start</code> — intro\n" +
       "<code>/help</code> — this message\n" +
-      "<code>/translate &lt;text&gt;</code> — translate (or reply to a message)\n\n" +
+      "<code>/translate &lt;text&gt;</code> — translate (or reply to a message)\n" +
+      "<code>/set &lt;dialect&gt;</code> — set target dialect\n" +
+      "<code>/dialects</code> — list dialects\n" +
+      "<code>/me</code> — your current settings\n\n" +
       "Tip: you can also just send a message and I will translate it for you."
   );
+});
+
+bot.command("dialects", async (ctx) => {
+  let lines = "<b>Kurdish dialects</b>\n";
+  for (const id of Object.keys(DIALECTS)) {
+    const d = DIALECTS[id];
+    lines += "• <code>" + id + "</code> — " + d.name + " — " + d.hint + "\n";
+  }
+  await replyAsHtml(ctx, lines);
+});
+
+// /set sorani | kurmanji | badini
+bot.command("set", async (ctx) => {
+  const choice = ctx.match.trim().toLowerCase();
+  if (!DIALECTS[choice]) {
+    await replyAsHtml(
+      ctx,
+      "Unknown dialect: <code>" + escapeHtml(choice) + "</code>\n\n" +
+        "Available: <code>sorani</code>, <code>kurmanji</code>, <code>badini</code>"
+    );
+    return;
+  }
+  setDialect(ctx.from.id, choice);
+  await replyAsHtml(ctx, "OK, now translating into <b>" + dialectLabel(choice) + "</b>.");
+});
+
+bot.command("me", async (ctx) => {
+  const settings = getSettings(ctx.from.id);
+  await replyAsHtml(ctx, "• Dialect: <b>" + dialectLabel(settings.dialect) + "</b>\n• Source: <b>auto</b>");
 });
 
 // /translate some text here
@@ -62,12 +99,12 @@ bot.command(["translate", "t"], async (ctx) => {
 });
 
 async function doTranslate(ctx, text) {
+  const settings = getSettings(ctx.from.id);
   try {
-    const translated = await translator.translate(text, "english", DEFAULT_DIALECT);
+    const translated = await translator.translate(text, "auto", settings.dialect);
     await replyAsHtml(
       ctx,
-      "<b>English</b> → <b>" + dialect.name + "</b> (" + dialect.native + ")\n\n" +
-        escapeHtml(translated)
+      "→ <b>" + dialectLabel(settings.dialect) + "</b>\n\n" + escapeHtml(translated)
     );
   } catch (err) {
     console.error("translate failed:", err);
@@ -75,7 +112,7 @@ async function doTranslate(ctx, text) {
   }
 }
 
-// bare text message = translate it. nice for quick use.
+// bare text message = translate it. fast path for quick use.
 bot.on("message:text", async (ctx) => {
   const text = ctx.message.text.trim();
   if (!text) return;
@@ -89,9 +126,9 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;");
 }
 
-// Long polling for now. Will switch to webhook when I deploy it.
 bot.catch((err) => {
   console.error("bot error:", err);
+  // don't let one bad message crash the whole process
 });
 
 bot.start();

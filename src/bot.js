@@ -2,8 +2,10 @@
 import "dotenv/config";
 import { Bot } from "grammy";
 import { Translator } from "./translator.js";
-import { DIALECTS, DEFAULT_DIALECT } from "./dialects.js";
+import { DIALECTS } from "./dialects.js";
 import { getSettings, setDialect } from "./settings.js";
+import { FREE_DAILY_LIMIT, remainingToday, usedToday, incrementUsage, isRateLimited } from "./limits.js";
+import { premiumInfo } from "./premium.js";
 
 const token = process.env.BOT_TOKEN;
 if (!token) {
@@ -24,7 +26,6 @@ async function replyAsHtml(ctx, html) {
   await ctx.reply(html, { parse_mode: "HTML" });
 }
 
-// Dialect names for formatting reply headers
 function dialectLabel(id) {
   const d = DIALECTS[id];
   return d ? d.name + " (" + d.native + ")" : "Kurdish";
@@ -54,8 +55,9 @@ bot.command(["help", "h"], async (ctx) => {
       "<code>/translate &lt;text&gt;</code> — translate (or reply to a message)\n" +
       "<code>/set &lt;dialect&gt;</code> — set target dialect\n" +
       "<code>/dialects</code> — list dialects\n" +
-      "<code>/me</code> — your current settings\n\n" +
-      "Tip: you can also just send a message and I will translate it for you."
+      "<code>/stats</code> — your free tier usage\n" +
+      "<code>/premium</code> — about unlimited\n" +
+      "<code>/me</code> — your current settings"
   );
 });
 
@@ -88,6 +90,24 @@ bot.command("me", async (ctx) => {
   await replyAsHtml(ctx, "• Dialect: <b>" + dialectLabel(settings.dialect) + "</b>\n• Source: <b>auto</b>");
 });
 
+bot.command("stats", async (ctx) => {
+  const used = usedToday(ctx.from.id);
+  await replyAsHtml(
+    ctx,
+    "Free tier usage today (UTC): <b>" +
+      used +
+      "</b>/<b>" +
+      FREE_DAILY_LIMIT +
+      "</b> translations.\n" +
+      remainingToday(ctx.from.id) +
+      " left."
+  );
+});
+
+bot.command("premium", async (ctx) => {
+  await replyAsHtml(ctx, premiumInfo().message);
+});
+
 // /translate some text here
 bot.command(["translate", "t"], async (ctx) => {
   const text = ctx.match.trim();
@@ -99,8 +119,22 @@ bot.command(["translate", "t"], async (ctx) => {
 });
 
 async function doTranslate(ctx, text) {
+  if (isRateLimited(ctx.from.id)) {
+    await replyAsHtml(ctx, "Slow down a bit, you're sending messages too fast.");
+    return;
+  }
+  if (remainingToday(ctx.from.id) <= 0) {
+    await replyAsHtml(
+      ctx,
+      "You've hit the free daily limit (" + FREE_DAILY_LIMIT + " translations). " +
+        "Try again tomorrow, or check <code>/premium</code> for unlimited."
+    );
+    return;
+  }
+
   const settings = getSettings(ctx.from.id);
   try {
+    incrementUsage(ctx.from.id);
     const translated = await translator.translate(text, "auto", settings.dialect);
     await replyAsHtml(
       ctx,
@@ -128,7 +162,6 @@ function escapeHtml(s) {
 
 bot.catch((err) => {
   console.error("bot error:", err);
-  // don't let one bad message crash the whole process
 });
 
 bot.start();

@@ -7,11 +7,13 @@ A Telegram bot that translates text into Kurdish dialects (Sorani, Kurmanji, Bad
 Right now the bot:
 - translates text into all 3 dialects (Sorani/Kurmanji/Badini), auto-detecting the source language
 - per-user dialect setting via `/set` (stored in memory)
+- summaries via `/summarize` (same Gemini model)
+- saves favorites: `/save`, `/list`, `/del`
 - free tier: 20 translations/day/user, with a spam guard
 - `/stats` shows your remaining usage
 - runs via long polling (fine for local dev)
 
-Coming up: favorite translations, a proper deploy setup, and paid premium.
+Coming up: a proper deploy setup (webhooks + serverless) and paid premium.
 
 ## Run it
 

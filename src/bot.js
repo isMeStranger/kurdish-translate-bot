@@ -3,7 +3,15 @@ import "dotenv/config";
 import { Bot } from "grammy";
 import { Translator } from "./translator.js";
 import { DIALECTS } from "./dialects.js";
-import { getSettings, setDialect } from "./settings.js";
+import {
+  getSettings,
+  setDialect,
+  saveLast,
+  getLast,
+  addFavorite,
+  listFavorites,
+  removeFavorite,
+} from "./settings.js";
 import { FREE_DAILY_LIMIT, remainingToday, usedToday, incrementUsage, isRateLimited } from "./limits.js";
 import { premiumInfo } from "./premium.js";
 
@@ -39,6 +47,7 @@ bot.command("start", async (ctx) => {
       "Send me any sentence and I will translate it into Kurdish for you.\n\n" +
       "• <code>/translate &lt;text&gt;</code> — translate a sentence\n" +
       "• <code>/set &lt;dialect&gt;</code> — choose Sorani / Kurmanji / Badini\n" +
+      "• <code>/save</code> — keep the last translation\n" +
       "• just send a message, I'll auto-detect the language\n\n" +
       "Currently translating into <b>" +
       dialectLabel(settings.dialect) +
@@ -55,6 +64,10 @@ bot.command(["help", "h"], async (ctx) => {
       "<code>/translate &lt;text&gt;</code> — translate (or reply to a message)\n" +
       "<code>/set &lt;dialect&gt;</code> — set target dialect\n" +
       "<code>/dialects</code> — list dialects\n" +
+      "<code>/summarize &lt;text&gt;</code> — summarize a text\n" +
+      "<code>/save</code> — save the last translation\n" +
+      "<code>/list</code> — your saved translations\n" +
+      "<code>/del &lt;n&gt;</code> — delete one (see /list)\n" +
       "<code>/stats</code> — your free tier usage\n" +
       "<code>/premium</code> — about unlimited\n" +
       "<code>/me</code> — your current settings"
@@ -118,6 +131,66 @@ bot.command(["translate", "t"], async (ctx) => {
   await doTranslate(ctx, text);
 });
 
+// /summarize some text here
+bot.command(["summarize", "sum"], async (ctx) => {
+  const text = ctx.match.trim();
+  if (!text) {
+    await replyAsHtml(ctx, "Usage: <code>/summarize long text here...</code>");
+    return;
+  }
+  if (isRateLimited(ctx.from.id)) {
+    await replyAsHtml(ctx, "Slow down a bit, you're sending messages too fast.");
+    return;
+  }
+  try {
+    const summary = await translator.summarize(text);
+    await replyAsHtml(ctx, "<b>Summary</b>\n\n" + escapeHtml(summary));
+  } catch (err) {
+    console.error("summarize failed:", err);
+    await replyAsHtml(ctx, Translator.friendlyError(err));
+  }
+});
+
+// ---- saved translations ----
+
+bot.command("save", async (ctx) => {
+  const last = getLast(ctx.from.id);
+  if (!last) {
+    await replyAsHtml(ctx, "Nothing to save yet. Translate something first!");
+    return;
+  }
+  const count = addFavorite(ctx.from.id, last);
+  await replyAsHtml(ctx, "Saved ✅ (you have " + count + " saved). See <code>/list</code>.");
+});
+
+bot.command("list", async (ctx) => {
+  const favs = listFavorites(ctx.from.id);
+  if (favs.length === 0) {
+    await replyAsHtml(ctx, "No saved translations yet. Use <code>/save</code> after translating.");
+    return;
+  }
+  let out = "<b>Your saved translations</b>\n";
+  favs.slice(0, 10).forEach((fav, i) => {
+    const snippet = fav.translation.length > 40
+      ? fav.translation.slice(0, 40) + "…"
+      : fav.translation;
+    out += i + 1 + ". <b>" + dialectLabel(fav.dialect) + "</b> — " + escapeHtml(snippet) + "\n";
+  });
+  if (favs.length > 10) out += "\n… and " + (favs.length - 10) + " more.";
+  out += "\n\nDelete with <code>/del &lt;n&gt;</code>";
+  await replyAsHtml(ctx, out);
+});
+
+bot.command("del", async (ctx) => {
+  const n = parseInt(ctx.match.trim(), 10);
+  if (!n || n < 1) {
+    await replyAsHtml(ctx, "Usage: <code>/del 2</code> (see numbered list in <code>/list</code>)");
+    return;
+  }
+  const ok = removeFavorite(ctx.from.id, n - 1);
+  await replyAsHtml(ctx, ok ? "Deleted." : "That number is not in your list.");
+});
+
 async function doTranslate(ctx, text) {
   if (isRateLimited(ctx.from.id)) {
     await replyAsHtml(ctx, "Slow down a bit, you're sending messages too fast.");
@@ -136,6 +209,11 @@ async function doTranslate(ctx, text) {
   try {
     incrementUsage(ctx.from.id);
     const translated = await translator.translate(text, "auto", settings.dialect);
+    saveLast(ctx.from.id, {
+      text: text,
+      translation: translated,
+      dialect: settings.dialect,
+    });
     await replyAsHtml(
       ctx,
       "→ <b>" + dialectLabel(settings.dialect) + "</b>\n\n" + escapeHtml(translated)

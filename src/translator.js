@@ -73,6 +73,18 @@ export class Translator {
     return (res.text || "").trim();
   }
 
+  async summarize(text) {
+    const prompt =
+      "Summarize the following text concisely while keeping the key meaning:\n\n" + text;
+
+    const res = await this.ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    return (res.text || "").trim();
+  }
+
   // Try to figure out if a Gemini error is the daily quota thing,
   // so we can tell the user something nice instead of raw JSON.
   static friendlyError(err) {

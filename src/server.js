@@ -1,0 +1,42 @@
+// Entry point. Decides between webhook mode (production, works on serverless
+// like Cloud Run) and long polling mode (local dev).
+import "dotenv/config";
+import express from "express";
+import { webhookCallback } from "grammy";
+import { buildBot } from "./bot.js";
+
+const bot = buildBot();
+
+const PORT = parseInt(process.env.PORT || "8080", 10);
+
+if (process.env.WEBHOOK_URL) {
+  const path = process.env.WEBHOOK_PATH || "/webhook/kurdish-translate";
+  const secret = process.env.WEBHOOK_SECRET;
+
+  const app = express();
+  app.use(express.json());
+
+  app.get("/", (_req, res) => res.send("Kurdish Translate Bot 🏳️"));
+  app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+  // grammY verifies the X-Telegram-Bot-Api-Secret-Token header for us
+  app.post(path, webhookCallback(bot, "express", { secretToken: secret }));
+
+  app.listen(PORT, () => {
+    console.log("webhook mode — listening on :" + PORT + path);
+    console.log("webhook url: " + process.env.WEBHOOK_URL);
+  });
+} else {
+  // local dev: long polling, no public URL needed
+  bot.start();
+  console.log("long polling mode");
+}
+
+// graceful shutdown so there are no hanging connections on deploys
+for (const sig of ["SIGINT", "SIGTERM"]) {
+  process.once(sig, async () => {
+    console.log("shutting down (" + sig + ")...");
+    await bot.stop();
+    process.exit(0);
+  });
+}

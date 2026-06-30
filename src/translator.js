@@ -2,6 +2,8 @@
 // I made, including the idiom detection part which works really well for Kurdish.
 import { GoogleGenAI } from "@google/genai";
 
+const MODEL = "gemini-2.5-flash"; // free tier model, better for idioms than 2.0-flash
+
 // Needed for the AQ. api keys from AI Studio. Without this header they just fail.
 function createClient(apiKey) {
   return new GoogleGenAI({
@@ -28,7 +30,7 @@ const SOURCE_LABELS = {
 };
 
 // sourceId "auto" means: let Gemini guess the language of the text.
-function buildPrompt(sourceId, dialectId, text) {
+export function buildPrompt(sourceId, dialectId, text) {
   const dialect = DIALECT_PROMPTS[dialectId] || "Kurdish";
   const source = SOURCE_LABELS[sourceId];
 
@@ -56,6 +58,14 @@ function buildPrompt(sourceId, dialectId, text) {
   );
 }
 
+// Gemini 429 errors look like "…retry in 51s…". Pull the number out so we can
+// tell the user how long to wait and retry once ourselves.
+export function parseRetrySeconds(message) {
+  if (!message) return null;
+  const m = String(message).match(/retry in (\d+(?:\.\d+)?)s?/i);
+  return m ? Math.ceil(parseFloat(m[1])) : null;
+}
+
 export class Translator {
   constructor(apiKey) {
     this.ai = createClient(apiKey);
@@ -63,25 +73,30 @@ export class Translator {
 
   // sourceId can be a specific language ("english", "arabic", ...) or "auto"
   async translate(text, sourceId, dialectId) {
-    const prompt = buildPrompt(sourceId || "auto", dialectId, text);
-
-    const res = await this.ai.models.generateContent({
-      model: "gemini-2.5-flash", // free tier model, better for idioms than 2.0-flash
-      contents: prompt,
-    });
-
-    return (res.text || "").trim();
+    return this.generate(buildPrompt(sourceId || "auto", dialectId, text));
   }
 
   async summarize(text) {
-    const prompt =
-      "Summarize the following text concisely while keeping the key meaning:\n\n" + text;
+    return this.generate(
+      "Summarize the following text concisely while keeping the key meaning:\n\n" + text
+    );
+  }
 
-    const res = await this.ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-    });
-
+  // shared call + one automatic retry on quota errors (with backoff)
+  async generate(prompt) {
+    let res;
+    try {
+      res = await this.ai.models.generateContent({ model: MODEL, contents: prompt });
+    } catch (err) {
+      const retry = parseRetrySeconds(err && err.message);
+      if (retry) {
+        console.warn("quota exceeded, retrying in " + retry + "s");
+        await new Promise((r) => setTimeout(r, (retry + 1) * 1000));
+        res = await this.ai.models.generateContent({ model: MODEL, contents: prompt });
+      } else {
+        throw err;
+      }
+    }
     return (res.text || "").trim();
   }
 
@@ -90,7 +105,11 @@ export class Translator {
   static friendlyError(err) {
     const msg = err && err.message ? err.message : "";
     if (msg.indexOf("quota") > -1 || msg.indexOf("RESOURCE_EXHAUSTED") > -1) {
-      return "Daily translation limit reached. Please try again later or upgrade.";
+      const retry = parseRetrySeconds(msg);
+      if (retry) {
+        return "Daily translation limit reached. Please wait " + retry + " seconds.";
+      }
+      return "Daily translation limit reached. Please try again later.";
     }
     return "Something went wrong. Please try again.";
   }

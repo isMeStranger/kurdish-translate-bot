@@ -89,7 +89,7 @@ provide one for free.
 
 ## Roadmap
 
+- [x] Unit tests for quota / prompt building
 - [ ] Telegram Stars premium (unlimited translations for 30 days)
-- [ ] Unit tests for quota / prompt building
 - [ ] Inline mode (type the bot name to translate on the fly)
 - [ ] Inline keyboards instead of typed `/set`

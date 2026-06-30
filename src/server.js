@@ -16,11 +16,19 @@ if (process.env.WEBHOOK_URL) {
   const app = express();
   app.use(express.json());
 
+  // cheap request log so Cloud Run logs are readable
+  app.use((req, _res, next) => {
+    console.log(req.method + " " + req.path);
+    next();
+  });
+
   app.get("/", (_req, res) => res.send("Kurdish Translate Bot 🏳️"));
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
   // grammY verifies the X-Telegram-Bot-Api-Secret-Token header for us
   app.post(path, webhookCallback(bot, "express", { secretToken: secret }));
+
+  app.post("*", (_req, res) => res.status(404).json({ error: "not found" }));
 
   app.listen(PORT, () => {
     console.log("webhook mode — listening on :" + PORT + path);

@@ -2,12 +2,18 @@
 // webhooks (production) or long polling (local dev) and is the single entry
 // point for both, so the deploy story stays simple.
 import "dotenv/config";
-import { Bot } from "grammy";
+import { Bot, InlineKeyboard } from "grammy";
 import { Translator } from "./translator.js";
 import { DIALECTS } from "./dialects.js";
 import { loadUser, saveUser } from "./store.js";
 import { FREE_DAILY_LIMIT, remainingToday, usedToday, incrementUsage, isRateLimited } from "./limits.js";
-import { premiumInfo } from "./premium.js";
+import {
+  hasPremium,
+  grantPremium,
+  createInvoiceLink,
+  buildPremiumMessage,
+  planLabel,
+} from "./premium.js";
 
 export function buildBot() {
   const token = process.env.BOT_TOKEN;
@@ -96,11 +102,26 @@ export function buildBot() {
 
   bot.command("me", async (ctx) => {
     const user = await loadUser(ctx.from.id);
-    await replyAsHtml(ctx, "• Dialect: <b>" + dialectLabel(user.dialect) + "</b>\n• Source: <b>auto</b>");
+    const premium = await hasPremium(ctx.from.id);
+    const line =
+      "• Dialect: <b>" + dialectLabel(user.dialect) + "</b>\n" +
+      "• Source: <b>auto</b>\n" +
+      "• Plan: <b>" + (premium ? "premium ✨" : "free") + "</b>";
+    await replyAsHtml(ctx, line);
   });
 
   bot.command("stats", async (ctx) => {
     const used = await usedToday(ctx.from.id);
+    const premium = await hasPremium(ctx.from.id);
+    if (premium) {
+      await replyAsHtml(
+        ctx,
+        "You're on <b>premium</b> ✨ — no daily limit. (usage today: " +
+          used +
+          " translations)"
+      );
+      return;
+    }
     await replyAsHtml(
       ctx,
       "Free tier usage today (UTC): <b>" +
@@ -113,8 +134,38 @@ export function buildBot() {
     );
   });
 
+  // ---- premium (Telegram Stars) ----
+
   bot.command("premium", async (ctx) => {
-    await replyAsHtml(ctx, premiumInfo().message);
+    const premium = await hasPremium(ctx.from.id);
+    if (premium) {
+      await replyAsHtml(ctx, "You're premium ✨ Thanks for supporting the bot!");
+      return;
+    }
+    const link = await createInvoiceLink(bot);
+    const keyboard = new InlineKeyboard().url("Pay " + planLabel() + " →", link);
+    await replyAsHtml(ctx, buildPremiumMessage());
+    await ctx.reply("Checkout:", {
+      reply_markup: keyboard,
+    });
+  });
+
+  // required: answer every pre-checkout, otherwise the payment never lands
+  bot.on("pre_checkout_query", async (ctx) => {
+    await ctx.answerPreCheckoutQuery(true);
+  });
+
+  bot.on("message:successful_payment", async (ctx) => {
+    const pay = ctx.message.successful_payment;
+    const days = 30; // matches the invoice payload
+    await grantPremium(ctx.from.id);
+    console.log(
+      "premium granted user=" + ctx.from.id + " stars=" + pay.total_amount
+    );
+    await replyAsHtml(
+      ctx,
+      "Payment received ✅ Premium is active for <b>" + days + " days</b>. No more daily limits!"
+    );
   });
 
   // /translate some text here
@@ -200,7 +251,9 @@ export function buildBot() {
       await replyAsHtml(ctx, "Slow down a bit, you're sending messages too fast.");
       return;
     }
-    if ((await remainingToday(ctx.from.id)) <= 0) {
+
+    const premium = await hasPremium(ctx.from.id);
+    if (!premium && (await remainingToday(ctx.from.id)) <= 0) {
       await replyAsHtml(
         ctx,
         "You've hit the free daily limit (" + FREE_DAILY_LIMIT + " translations). " +
@@ -211,7 +264,7 @@ export function buildBot() {
 
     const user = await loadUser(ctx.from.id);
     try {
-      await incrementUsage(ctx.from.id);
+      if (!premium) await incrementUsage(ctx.from.id);
       const translated = await translator.translate(text, "auto", user.dialect);
       user.last = {
         text: text,

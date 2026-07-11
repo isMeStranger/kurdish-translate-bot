@@ -86,6 +86,7 @@ export function defaultUser() {
     dialect: "sorani",
     favorites: [],
     usage: {},
+    premiumUntil: null, // ms timestamp when premium expires (null = never had it)
   };
 }
 

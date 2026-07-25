@@ -283,6 +283,39 @@ export function buildBot() {
     }
   }
 
+  // ---- inline mode ----
+  // type "@yourbot a sentence here" in any chat to get an inline translation.
+  // (must be enabled in @BotFather → /setinline)
+  bot.inlineQuery(/[\s\S]/, async (ctx) => {
+    const query = ctx.inlineQuery.query.trim();
+    if (!query) {
+      await ctx.answerInlineQuery([], {
+        switch_pm_text: "Write a sentence to translate",
+        switch_pm_parameter: "inline",
+      });
+      return;
+    }
+    const user = await loadUser(ctx.inlineQuery.from.id);
+    try {
+      const translated = await translator.translate(query, "auto", user.dialect);
+      await ctx.answerInlineQuery(
+        [
+          {
+            type: "article",
+            id: String(Date.now()),
+            title: dialectLabel(user.dialect),
+            description: query.slice(0, 60),
+            input_message_content: { message_text: translated },
+          },
+        ],
+        { is_personal: true, cache_time: 1 }
+      );
+    } catch (err) {
+      console.error("inline translate failed:", err);
+      await ctx.answerInlineQuery([], { is_personal: true });
+    }
+  });
+
   // bare text message = translate it. fast path for quick use.
   bot.on("message:text", async (ctx) => {
     const text = ctx.message.text.trim();

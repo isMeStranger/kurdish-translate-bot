@@ -4,8 +4,14 @@ import "dotenv/config";
 import express from "express";
 import { webhookCallback } from "grammy";
 import { buildBot } from "./bot.js";
+import { COMMANDS } from "./commands.js";
 
 const bot = buildBot();
+
+// publish the command menu once at boot; if it fails, it's not fatal
+bot.api.setMyCommands(COMMANDS).catch((err) => {
+  console.error("setMyCommands failed: " + err.message);
+});
 
 const PORT = parseInt(process.env.PORT || "8080", 10);
 

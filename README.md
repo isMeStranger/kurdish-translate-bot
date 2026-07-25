@@ -10,6 +10,7 @@ A Telegram bot that translates text into Kurdish dialects (Sorani, Kurmanji, Bad
 - Free tier: **20 translations/day/user** (UTC) + a per-user spam guard
 - `/summarize` — summarize a long text with the same model
 - Saved translations: `/save`, `/list`, `/del`
+- **Inline mode** — type `@kurdish_translate_bot hello there` in any chat, pick the translation
 - `/stats`, `/me`, `/dialects`, `/premium`
 - **Premium via Telegram Stars**: 300 ⭐ for 30 days of unlimited translations (configurable)
 - **Webhook mode** for serverless production, **long polling** for local dev
@@ -84,7 +85,7 @@ provide one for free.
 ├── scripts/
 │   └── set-webhook.js   # one-time: point Telegram at your public URL
 ├── test/
-│   └── quota.test.js    # (soon) unit tests for the quota parser
+│   └── quota.test.js    # unit tests for the quota parser + prompt building
 └── .env.example
 ```
 
@@ -92,5 +93,5 @@ provide one for free.
 
 - [x] Unit tests for quota / prompt building
 - [x] Telegram Stars premium (unlimited translations for 30 days)
-- [ ] Inline mode (type the bot name to translate on the fly)
+- [x] Inline mode (type the bot name to translate on the fly)
 - [ ] Inline keyboards instead of typed `/set`

@@ -1,6 +1,6 @@
 {
   "name": "kurdish-translate-bot",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "description": "Telegram bot for AI Kurdish translation (Sorani, Kurmanji, Badini) using Gemini",
   "type": "module",
   "main": "src/server.js",

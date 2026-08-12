@@ -10,10 +10,12 @@ import { FREE_DAILY_LIMIT, remainingToday, usedToday, incrementUsage, isRateLimi
 import {
   hasPremium,
   grantPremium,
+  revokePremium,
   createInvoiceLink,
   buildPremiumMessage,
   planLabel,
 } from "./premium.js";
+import { PAYMENT_METHODS, methodById, PRICE_IQD, buildManualPayMessage } from "./payments.js";
 
 export function buildBot() {
   const token = process.env.BOT_TOKEN;
@@ -134,7 +136,11 @@ export function buildBot() {
     );
   });
 
-  // ---- premium (Telegram Stars) ----
+  // ---- premium: Telegram Stars OR manual contact payment ----
+
+  function isAdmin(ctx) {
+    return String(ctx.from.id) === String(process.env.ADMIN_USER_ID || "");
+  }
 
   bot.command("premium", async (ctx) => {
     const premium = await hasPremium(ctx.from.id);
@@ -143,11 +149,99 @@ export function buildBot() {
       return;
     }
     const link = await createInvoiceLink(bot);
-    const keyboard = new InlineKeyboard().url("Pay " + planLabel() + " →", link);
+    const kb = new InlineKeyboard().url("Pay " + planLabel() + " ⭐", link);
+    for (const m of PAYMENT_METHODS) {
+      kb.row().text(m.name + " (contact & pay)", "pay_method:" + m.id);
+    }
     await replyAsHtml(ctx, buildPremiumMessage());
-    await ctx.reply("Checkout:", {
-      reply_markup: keyboard,
+    await ctx.reply("Choose how you want to pay:", {
+      reply_markup: kb,
     });
+  });
+
+  // manual payment: user picked a provider (FIB / ZainCash / Qi / AsiaPay)
+  bot.callbackQuery(/^pay_method:(.+)$/, async (ctx) => {
+    const method = methodById(ctx.match[1]);
+    if (!method) {
+      await ctx.answerCallbackQuery({ show_alert: true, text: "Unknown payment method." });
+      return;
+    }
+    const kb = new InlineKeyboard();
+    const owner = process.env.OWNER_USERNAME;
+    if (owner) kb.url("💬 Message the owner", "https://t.me/" + owner);
+    kb.row().text("✅ I've sent the money", "pay_done:" + method.id);
+    await ctx.reply(buildManualPayMessage(method), {
+      parse_mode: "HTML",
+      reply_markup: kb,
+    });
+    await ctx.answerCallbackQuery();
+  });
+
+  // manual payment: user claims they sent the money → tell the owner to verify
+  bot.callbackQuery(/^pay_done:(.+)$/, async (ctx) => {
+    const method = methodById(ctx.match[1]);
+    const user = ctx.from;
+    const ownerId = process.env.ADMIN_USER_ID;
+
+    if (ownerId) {
+      const text =
+        "🛒 <b>Manual payment claim</b>\n" +
+        "User: <a href=\"tg://user?id=" + user.id + "\">" + escapeHtml(user.first_name || "user") + "</a> (@" + (user.username || "no username") + ")\n" +
+        "Telegram ID: <code>" + user.id + "</code>\n" +
+        "Method: <b>" + (method ? method.name : "?") + "</b>\n" +
+        "Amount: " + PRICE_IQD + " (30 days)\n\n" +
+        "Verify the transfer, then run /grant " + user.id + " to activate." +
+        (method ? " If they didn't pay, /revoke " + user.id + " once granted." : "");
+      try {
+        await bot.api.sendMessage(ownerId, text, { parse_mode: "HTML" });
+      } catch (err) {
+        console.error("owner notify failed:", err);
+      }
+    }
+
+    await replyAsHtml(
+      ctx,
+      "Notification sent to the owner ✅\nI'll activate your premium as soon as I confirm the payment. Thanks for your patience!"
+    );
+    await ctx.answerCallbackQuery();
+  });
+
+  // ---- owner-only admin commands ----
+
+  bot.command("grant", async (ctx) => {
+    if (!isAdmin(ctx)) {
+      await replyAsHtml(ctx, "This command is only for the owner.");
+      return;
+    }
+    const target = parseInt(ctx.match.trim().split(/\s+/)[0], 10);
+    if (!target) {
+      await replyAsHtml(ctx, "Usage: <code>/grant &lt;user_id&gt;</code>");
+      return;
+    }
+    await grantPremium(target);
+    await replyAsHtml(ctx, "Granted 30-day premium to <code>" + target + "</code>.");
+    try {
+      await bot.api.sendMessage(
+        target,
+        "Your premium is now active ✨ 30 days of unlimited translations. Thank you!"
+      );
+    } catch (err) {
+      console.error("grant notify failed:", err);
+    }
+  });
+
+  bot.command("revoke", async (ctx) => {
+    if (!isAdmin(ctx)) {
+      await replyAsHtml(ctx, "This command is only for the owner.");
+      return;
+    }
+    const target = parseInt(ctx.match.trim().split(/\s+/)[0], 10);
+    if (!target) {
+      await replyAsHtml(ctx, "Usage: <code>/revoke &lt;user_id&gt;</code>");
+      return;
+    }
+    await revokePremium(target);
+    await replyAsHtml(ctx, "Revoked premium for <code>" + target + "</code>.");
   });
 
   // required: answer every pre-checkout, otherwise the payment never lands

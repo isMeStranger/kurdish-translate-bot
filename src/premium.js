@@ -31,6 +31,13 @@ export async function grantPremium(userId) {
   return user.premiumUntil;
 }
 
+// for the owner when a manual payment turns out to be a no-show
+export async function revokePremium(userId) {
+  const user = await loadUser(userId);
+  user.premiumUntil = null;
+  await saveUser(userId, user);
+}
+
 export function buildPremiumMessage() {
   return (
     "Premium gives you <b>unlimited translations</b> — no daily limit — for " +

@@ -12,7 +12,8 @@ A Telegram bot that translates text into Kurdish dialects (Sorani, Kurmanji, Bad
 - Saved translations: `/save`, `/list`, `/del`
 - **Inline mode** — type `@kurdish_translate_bot hello there` in any chat, pick the translation
 - `/stats`, `/me`, `/dialects`, `/premium`
-- **Premium via Telegram Stars**: 300 ⭐ for 30 days of unlimited translations (configurable)
+- **Premium**: Telegram Stars **or** manual contact payment via **FIB / ZainCash / Qi Card / AsiaPay**
+  — owner verifies transfers and runs `/grant` in the chat
 - **Webhook mode** for serverless production, **long polling** for local dev
 - State in **Redis** (keys off with the memory fallback for dev)
 
@@ -29,7 +30,24 @@ The single entry point `src/server.js` decides the mode:
 - `WEBHOOK_URL` **set** → starts an Express server and registers the bot webhook
 - `WEBHOOK_URL` **empty** → long polling (just open a private chat and message it)
 
-## Local dev
+## Premium
+
+Two ways to pay for the same thing (30 days of unlimited translations):
+
+1. **Telegram Stars** — instant, fully automatic (`/premium` → “Pay 300 ⭐”).
+2. **Contact & pay** — pick **FIB**, **ZainCash**, **Qi Card** or **AsiaPay** in the
+   `/premium` menu, message the owner, send the money, then tap **“I've sent the money”**.
+   The owner gets a notification with your id and checks the transfer, then activates
+   your premium with `/grant <user_id>`.
+
+Owner-only commands:
+
+- `/grant <user_id>` — grant 30 days of premium (after verifying a manual payment)
+- `/revoke <user_id>` — take it back (no-show transfer)
+
+Set `ADMIN_USER_ID` (numeric) and `OWNER_USERNAME` (no `@`) in `.env` for this to work.
+
+## Run it
 
 ```bash
 npm install
@@ -81,6 +99,7 @@ provide one for free.
 │   ├── store.js         # Redis or in-memory KV + user record helpers
 │   ├── limits.js        # free tier daily limits + spam guard
 │   ├── premium.js       # Telegram Stars premium (invoice + grants)
+│   ├── payments.js      # manual methods: FIB, ZainCash, Qi Card, AsiaPay
 │   └── dialects.js      # source languages + target dialect definitions
 ├── scripts/
 │   └── set-webhook.js   # one-time: point Telegram at your public URL

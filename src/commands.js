@@ -10,7 +10,7 @@ export const COMMANDS = [
   { command: "list", description: "Your saved translations" },
   { command: "del", description: "Delete a saved translation: /del 2" },
   { command: "stats", description: "Your usage / plan" },
-  { command: "premium", description: "Unlimited via Telegram Stars" },
+  { command: "premium", description: "Unlimited — Stars or FIB/ZainCash/Qi/AsiaPay" },
   { command: "me", description: "Your settings" },
   { command: "help", description: "All commands" },
 ];

@@ -87,6 +87,8 @@ export function defaultUser() {
     favorites: [],
     usage: {},
     premiumUntil: null, // ms timestamp when premium expires (null = never had it)
+    phone: null, // phone number shared for a manual payment claim
+    pendingManualMethod: null, // which provider the user claimed, awaiting their phone
   };
 }
 

@@ -2,7 +2,7 @@
 // webhooks (production) or long polling (local dev) and is the single entry
 // point for both, so the deploy story stays simple.
 import "dotenv/config";
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard, Keyboard } from "grammy";
 import { Translator } from "./translator.js";
 import { DIALECTS } from "./dialects.js";
 import { loadUser, saveUser } from "./store.js";
@@ -177,34 +177,85 @@ export function buildBot() {
     await ctx.answerCallbackQuery();
   });
 
-  // manual payment: user claims they sent the money → tell the owner to verify
+  // manual payment: user claims they sent the money → ask for the phone
+  // number first so the owner can match the transfer, then notify the owner
   bot.callbackQuery(/^pay_done:(.+)$/, async (ctx) => {
     const method = methodById(ctx.match[1]);
-    const user = ctx.from;
+    const user = await loadUser(ctx.from.id);
+
+    if (!user.phone) {
+      user.pendingManualMethod = method ? method.id : null;
+      await saveUser(ctx.from.id, user);
+      await replyAsHtml(
+        ctx,
+        "Before I can verify the transfer, share the <b>phone number</b> you paid from " +
+          "(the account on your " +
+          (method ? method.name : "payment") +
+          ") so I can match it against the transfer.\n\n" +
+          "Tap the button below — Telegram sends <b>only your phone number</b>, nothing else."
+      );
+      const keyboard = new Keyboard().requestContact("📱 Share my phone number").resized();
+      await ctx.reply("Share your number:", { reply_markup: keyboard });
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    await notifyOwnerOfClaim(ctx, user, method, true);
+    await ctx.answerCallbackQuery();
+  });
+
+  // when the user shares their phone for a pending manual payment
+  bot.on("message:contact", async (ctx) => {
+    const phone = (ctx.message.contact && ctx.message.contact.phone_number) || "";
+    const user = await loadUser(ctx.from.id);
+    const method = methodById(String(user.pendingManualMethod || ""));
+    user.phone = phone;
+    user.pendingManualMethod = null;
+    await saveUser(ctx.from.id, user);
+
+    if (!method) {
+      // shared outside the payment flow — just record it
+      await ctx.reply("Got your number 📱 Thanks.", {
+        reply_markup: { remove_keyboard: true },
+      });
+      return;
+    }
+
+    await ctx.reply(await notifyOwnerOfClaim(ctx, user, method, true), {
+      parse_mode: "HTML",
+      reply_markup: { remove_keyboard: true },
+    });
+  });
+
+  // formats + sends the manual payment claim to the owner; returns the
+  // user-facing confirmation text
+  async function notifyOwnerOfClaim(ctx, user, method, requestPhone) {
     const ownerId = process.env.ADMIN_USER_ID;
+    const claimUser = ctx.from;
+    const msg =
+      "🛒 <b>Manual payment claim</b>\n" +
+      "User: <a href=\"tg://user?id=" + claimUser.id + "\">" + escapeHtml(claimUser.first_name || "user") + "</a> (@" + (claimUser.username || "no username") + ")\n" +
+      "Telegram ID: <code>" + claimUser.id + "</code>\n" +
+      "Phone: <code>" + escapeHtml(user.phone || "not shared") + "</code>\n" +
+      "Method: <b>" + (method ? method.name : "?") + "</b>\n" +
+      "Amount: " + PRICE_IQD + " (30 days)\n\n" +
+      "Check that this number matches the transfer, then /grant " + claimUser.id +
+      ". No match → ignore or /revoke once granted.";
 
     if (ownerId) {
-      const text =
-        "🛒 <b>Manual payment claim</b>\n" +
-        "User: <a href=\"tg://user?id=" + user.id + "\">" + escapeHtml(user.first_name || "user") + "</a> (@" + (user.username || "no username") + ")\n" +
-        "Telegram ID: <code>" + user.id + "</code>\n" +
-        "Method: <b>" + (method ? method.name : "?") + "</b>\n" +
-        "Amount: " + PRICE_IQD + " (30 days)\n\n" +
-        "Verify the transfer, then run /grant " + user.id + " to activate." +
-        (method ? " If they didn't pay, /revoke " + user.id + " once granted." : "");
       try {
-        await bot.api.sendMessage(ownerId, text, { parse_mode: "HTML" });
+        await bot.api.sendMessage(ownerId, msg, { parse_mode: "HTML" });
       } catch (err) {
         console.error("owner notify failed:", err);
       }
     }
 
-    await replyAsHtml(
-      ctx,
-      "Notification sent to the owner ✅\nI'll activate your premium as soon as I confirm the payment. Thanks for your patience!"
+    return (
+      "Notification sent to the owner ✅\n" +
+      (requestPhone ? "They'll match it with your phone number and activate your premium. " : "") +
+      "Thanks for your patience!"
     );
-    await ctx.answerCallbackQuery();
-  });
+  }
 
   // ---- owner-only admin commands ----
 

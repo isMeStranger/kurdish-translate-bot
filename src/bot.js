@@ -166,45 +166,35 @@ export function buildBot() {
       await ctx.answerCallbackQuery({ show_alert: true, text: "Unknown payment method." });
       return;
     }
-    const kb = new InlineKeyboard();
-    const owner = process.env.OWNER_USERNAME;
-    if (owner) kb.url("💬 Message the owner", "https://t.me/" + owner);
-    kb.row().text("✅ I've sent the money", "pay_done:" + method.id);
-    await ctx.reply(buildManualPayMessage(method), {
-      parse_mode: "HTML",
-      reply_markup: kb,
-    });
+    const user = await loadUser(ctx.from.id);
+
+    if (!user.phone) {
+      // confirm the phone number BEFORE we hand over the payment instructions
+      await askPhoneForMethod(ctx, user, method);
+    } else {
+      await showManualPayInstructions(ctx, method);
+    }
     await ctx.answerCallbackQuery();
   });
 
-  // manual payment: user claims they sent the money → ask for the phone
-  // number first so the owner can match the transfer, then notify the owner
   bot.callbackQuery(/^pay_done:(.+)$/, async (ctx) => {
     const method = methodById(ctx.match[1]);
     const user = await loadUser(ctx.from.id);
 
+    // shouldn't happen — the number is collected before instructions are shown —
+    // but never trust a callback; re-ask rather than lose the claim silently
     if (!user.phone) {
-      user.pendingManualMethod = method ? method.id : null;
-      await saveUser(ctx.from.id, user);
-      await replyAsHtml(
-        ctx,
-        "Before I can verify the transfer, share the <b>phone number</b> you paid from " +
-          "(the account on your " +
-          (method ? method.name : "payment") +
-          ") so I can match it against the transfer.\n\n" +
-          "Tap the button below — Telegram sends <b>only your phone number</b>, nothing else."
-      );
-      const keyboard = new Keyboard().requestContact("📱 Share my phone number").resized();
-      await ctx.reply("Share your number:", { reply_markup: keyboard });
+      await askPhoneForMethod(ctx, user, method);
       await ctx.answerCallbackQuery();
       return;
     }
 
-    await notifyOwnerOfClaim(ctx, user, method, true);
+    await notifyOwnerOfClaim(ctx, user, method);
     await ctx.answerCallbackQuery();
   });
 
-  // when the user shares their phone for a pending manual payment
+  // persist the phone number, then either confirm it and continue the payment
+  // flow, or just note it if shared for no reason
   bot.on("message:contact", async (ctx) => {
     const phone = (ctx.message.contact && ctx.message.contact.phone_number) || "";
     const user = await loadUser(ctx.from.id);
@@ -215,21 +205,52 @@ export function buildBot() {
 
     if (!method) {
       // shared outside the payment flow — just record it
-      await ctx.reply("Got your number 📱 Thanks.", {
-        reply_markup: { remove_keyboard: true },
-      });
+      await ctx.reply(
+        "Got your number 📱 (<b>" + escapeHtml(phone) + "</b>). I'll use it if you pay manually.",
+        { parse_mode: "HTML", reply_markup: { remove_keyboard: true } }
+      );
       return;
     }
 
-    await ctx.reply(await notifyOwnerOfClaim(ctx, user, method, true), {
-      parse_mode: "HTML",
-      reply_markup: { remove_keyboard: true },
-    });
+    // confirm the number, then hand over the payment instructions
+    await ctx.reply(
+      "Thanks! Your number: <b>" + escapeHtml(phone) + "</b>\n" +
+        "If this isn't the account you'll pay from, start over with <code>/premium</code>.",
+      { parse_mode: "HTML", reply_markup: { remove_keyboard: true } }
+    );
+    await showManualPayInstructions(ctx, method);
   });
+
+  // ask the user to share their phone number (native Telegram contact button)
+  async function askPhoneForMethod(ctx, user, method) {
+    user.pendingManualMethod = method ? method.id : null;
+    await saveUser(ctx.from.id, user);
+    await replyAsHtml(
+      ctx,
+      "First, share the <b>phone number</b> on your " +
+        (method ? method.name : "payment") +
+        " account so I can match the transfer later.\n\n" +
+        "Tap the button below — Telegram sends <b>only your phone number</b>, nothing else."
+    );
+    const keyboard = new Keyboard().requestContact("📱 Share my phone number").resized();
+    await ctx.reply("Share your number:", { reply_markup: keyboard });
+  }
+
+  // payment instructions + the buttons to contact the owner and claim payment
+  async function showManualPayInstructions(ctx, method) {
+    const kb = new InlineKeyboard();
+    const owner = process.env.OWNER_USERNAME;
+    if (owner) kb.url("💬 Message the owner", "https://t.me/" + owner);
+    kb.row().text("✅ I've sent the money", "pay_done:" + method.id);
+    await ctx.reply(buildManualPayMessage(method), {
+      parse_mode: "HTML",
+      reply_markup: kb,
+    });
+  }
 
   // formats + sends the manual payment claim to the owner; returns the
   // user-facing confirmation text
-  async function notifyOwnerOfClaim(ctx, user, method, requestPhone) {
+  async function notifyOwnerOfClaim(ctx, user, method) {
     const ownerId = process.env.ADMIN_USER_ID;
     const claimUser = ctx.from;
     const msg =
@@ -252,7 +273,7 @@ export function buildBot() {
 
     return (
       "Notification sent to the owner ✅\n" +
-      (requestPhone ? "They'll match it with your phone number and activate your premium. " : "") +
+      "They'll match it with your phone number (<b>" + escapeHtml(user.phone || "") + "</b>) and activate your premium. " +
       "Thanks for your patience!"
     );
   }

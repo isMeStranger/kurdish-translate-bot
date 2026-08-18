@@ -36,10 +36,11 @@ Two ways to pay for the same thing (30 days of unlimited translations):
 
 1. **Telegram Stars** — instant, fully automatic (`/premium` → “Pay 300 ⭐”).
 2. **Contact & pay** — pick **FIB**, **ZainCash**, **Qi Card** or **AsiaPay** in the
-   `/premium` menu, message the owner, send the money, then tap **“I've sent the money”**.
-   The bot first asks you to **share your phone number** (the one on the account you
-   paid from), records it, and notifies the owner with your id + phone so they can match
-   the transfer. Once verified, the owner activates your premium with `/grant <user_id>`.
+   `/premium` menu. The bot **first asks you to share your phone number** (the account
+   you'll pay from), confirms it, and then shows the payment instructions. After you send
+   the money and tap **“I've sent the money”**, it notifies the owner with your id + phone
+   so they can match the transfer. Once verified, the owner activates your premium with
+   `/grant <user_id>`.
 
 Owner-only commands:
 

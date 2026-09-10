@@ -11,9 +11,7 @@ A Telegram bot that translates text into Kurdish dialects (Sorani, Kurmanji, Bad
 - `/summarize` — summarize a long text with the same model
 - Saved translations: `/save`, `/list`, `/del`
 - **Inline mode** — type `@kurdish_translate_bot hello there` in any chat, pick the translation
-- `/stats`, `/me`, `/dialects`, `/premium`
-- **Premium**: Telegram Stars **or** manual contact payment via **FIB / ZainCash / Qi Card / AsiaPay**
-  — owner verifies transfers and runs `/grant` in the chat
+- `/stats`, `/me`, `/dialects`
 - **Webhook mode** for serverless production, **long polling** for local dev
 - State in **Redis** (keys off with the memory fallback for dev)
 
@@ -29,25 +27,6 @@ The single entry point `src/server.js` decides the mode:
 
 - `WEBHOOK_URL` **set** → starts an Express server and registers the bot webhook
 - `WEBHOOK_URL` **empty** → long polling (just open a private chat and message it)
-
-## Premium
-
-Two ways to pay for the same thing (30 days of unlimited translations):
-
-1. **Telegram Stars** — instant, fully automatic (`/premium` → “Pay 300 ⭐”).
-2. **Contact & pay** — pick **FIB**, **ZainCash**, **Qi Card** or **AsiaPay** in the
-   `/premium` menu. The bot **first asks you to share your phone number** (the account
-   you'll pay from), confirms it, and then shows the payment instructions. After you send
-   the money and tap **“I've sent the money”**, it notifies the owner with your id + phone
-   so they can match the transfer. Once verified, the owner activates your premium with
-   `/grant <user_id>`.
-
-Owner-only commands:
-
-- `/grant <user_id>` — grant 30 days of premium (after verifying a manual payment)
-- `/revoke <user_id>` — take it back (no-show transfer)
-
-Set `ADMIN_USER_ID` (numeric) and `OWNER_USERNAME` (no `@`) in `.env` for this to work.
 
 ## Run it
 
@@ -100,8 +79,6 @@ provide one for free.
 │   ├── translator.js    # Gemini calls (idiom detection, auto-detect source)
 │   ├── store.js         # Redis or in-memory KV + user record helpers
 │   ├── limits.js        # free tier daily limits + spam guard
-│   ├── premium.js       # Telegram Stars premium (invoice + grants)
-│   ├── payments.js      # manual methods: FIB, ZainCash, Qi Card, AsiaPay
 │   └── dialects.js      # source languages + target dialect definitions
 ├── scripts/
 │   └── set-webhook.js   # one-time: point Telegram at your public URL
@@ -113,6 +90,5 @@ provide one for free.
 ## Roadmap
 
 - [x] Unit tests for quota / prompt building
-- [x] Telegram Stars premium (unlimited translations for 30 days)
 - [x] Inline mode (type the bot name to translate on the fly)
 - [ ] Inline keyboards instead of typed `/set`
